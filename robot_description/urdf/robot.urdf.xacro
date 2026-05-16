@@ -1,0 +1,945 @@
+<?xml version="1.0"?>
+<!--
+  robot.urdf.xacro
+  Palm Fruit Harvesting Robot — Mobile Manipulator
+  ──────────────────────────────────────────────────
+  Author  : Pan Techprototype
+  GitHub  : github.com/pan-k15
+  Stack   : ROS2 Humble · MoveIt2 · Nav2
+  Rev     : A · 2026
+
+  Kinematic Tree
+  ──────────────
+  base_footprint  (virtual floor frame)
+  └── base_link          (chassis body)
+       ├── left_track_link       (continuous)
+       ├── right_track_link      (continuous)
+       ├── imu_link              (fixed)
+       ├── sensor_mast_link      (fixed)
+       │    ├── lidar_link        (fixed)
+       │    ├── depth_camera_link (fixed)
+       │    ├── rgb_camera_link   (fixed)
+       │    └── gps_link          (fixed)
+       ├── bin_link              (fixed — collection bin)
+       └── arm_base_link         (revolute  — azimuth / pan   Z-axis)
+            └── boom_pitch_link  (revolute  — elevation        Y-axis)
+                 └── boom_extend_link (prismatic — telescope   X-axis)
+                      └── wrist_pitch_link (revolute — pitch   Y-axis)
+                           └── wrist_roll_link  (revolute — roll    X-axis)
+                                └── cutter_mount_link (fixed)
+                                     └── blade_link (continuous — spin Z-axis)
+-->
+
+<robot name="palm_harvester" xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- ═══════════════════════════════════════════════════════════
+       PROPERTIES
+  ═══════════════════════════════════════════════════════════════ -->
+  <xacro:property name="PI" value="3.14159265358979"/>
+
+  <!-- Chassis -->
+  <xacro:property name="chassis_length"  value="2.00"/>
+  <xacro:property name="chassis_width"   value="1.00"/>
+  <xacro:property name="chassis_height"  value="0.40"/>
+  <xacro:property name="chassis_mass"    value="180.0"/>
+  <xacro:property name="chassis_z"       value="0.50"/>   <!-- CoM height off ground -->
+
+  <!-- Tracks -->
+  <xacro:property name="track_length"    value="2.00"/>
+  <xacro:property name="track_width"     value="0.22"/>
+  <xacro:property name="track_height"    value="0.50"/>
+  <xacro:property name="track_mass"      value="25.0"/>
+  <xacro:property name="track_y_offset"  value="0.61"/>   <!-- half chassis_width + half track_width -->
+  <xacro:property name="track_z"         value="0.25"/>   <!-- ground to track centre -->
+
+  <!-- Sensor mast -->
+  <xacro:property name="mast_radius"     value="0.025"/>
+  <xacro:property name="mast_height"     value="0.60"/>
+  <xacro:property name="mast_x"          value="-0.60"/>  <!-- rear-centre of chassis -->
+  <xacro:property name="mast_z"          value="0.30"/>   <!-- above chassis top -->
+
+  <!-- LiDAR -->
+  <xacro:property name="lidar_radius"    value="0.055"/>
+  <xacro:property name="lidar_height"    value="0.075"/>
+  <xacro:property name="lidar_mass"      value="0.9"/>
+  <xacro:property name="lidar_z_offset"  value="0.07"/>
+
+  <!-- Depth camera (RealSense D455 approx) -->
+  <xacro:property name="cam_x"           value="0.025"/>
+  <xacro:property name="cam_y"           value="0.0"/>
+  <xacro:property name="cam_z"           value="0.013"/>
+  <xacro:property name="cam_mass"        value="0.12"/>
+
+  <!-- GPS -->
+  <xacro:property name="gps_radius"      value="0.03"/>
+  <xacro:property name="gps_height"      value="0.02"/>
+  <xacro:property name="gps_z_offset"    value="0.02"/>
+
+  <!-- Arm base (pan joint) -->
+  <xacro:property name="arm_base_radius" value="0.10"/>
+  <xacro:property name="arm_base_height" value="0.12"/>
+  <xacro:property name="arm_base_mass"   value="8.0"/>
+  <xacro:property name="arm_base_x"      value="0.70"/>   <!-- forward on chassis -->
+  <xacro:property name="arm_base_z"      value="0.26"/>   <!-- above chassis top surface -->
+
+  <!-- Boom stage-1 (pitch link) -->
+  <xacro:property name="boom1_length"    value="2.50"/>
+  <xacro:property name="boom1_radius"    value="0.055"/>
+  <xacro:property name="boom1_mass"      value="18.0"/>
+  <!-- pitch range: 0° (horizontal) → 75° -->
+  <xacro:property name="boom_pitch_min"  value="0.0"/>
+  <xacro:property name="boom_pitch_max"  value="1.309"/>  <!-- 75° in rad -->
+
+  <!-- Boom stage-2 (telescoping, prismatic) -->
+  <xacro:property name="boom2_length"    value="2.00"/>   <!-- max extension -->
+  <xacro:property name="boom2_radius"    value="0.040"/>
+  <xacro:property name="boom2_mass"      value="10.0"/>
+  <xacro:property name="boom_ext_min"    value="0.0"/>
+  <xacro:property name="boom_ext_max"    value="2.00"/>
+
+  <!-- Wrist pitch -->
+  <xacro:property name="wrist_length"    value="0.18"/>
+  <xacro:property name="wrist_radius"    value="0.040"/>
+  <xacro:property name="wrist_mass"      value="2.5"/>
+  <xacro:property name="wrist_pitch_min" value="-1.5708"/> <!-- -90° -->
+  <xacro:property name="wrist_pitch_max" value="1.5708"/>  <!--  90° -->
+
+  <!-- Wrist roll -->
+  <xacro:property name="wrist_roll_min"  value="-1.5708"/>
+  <xacro:property name="wrist_roll_max"  value="1.5708"/>
+
+  <!-- Cutter / end-effector -->
+  <xacro:property name="cutter_length"   value="0.30"/>   <!-- sickle blade reach -->
+  <xacro:property name="cutter_width"    value="0.08"/>
+  <xacro:property name="cutter_height"   value="0.06"/>
+  <xacro:property name="cutter_mass"     value="3.5"/>    <!-- housing + motor + blade -->
+  <xacro:property name="blade_mass"      value="0.80"/>
+  <xacro:property name="blade_radius"    value="0.15"/>
+  <xacro:property name="blade_thickness" value="0.004"/>
+
+  <!-- Collection bin -->
+  <xacro:property name="bin_length"      value="0.90"/>
+  <xacro:property name="bin_width"       value="0.80"/>
+  <xacro:property name="bin_height"      value="0.60"/>
+  <xacro:property name="bin_mass"        value="12.0"/>
+  <xacro:property name="bin_x"           value="-0.30"/>  <!-- rear of chassis -->
+  <xacro:property name="bin_z"           value="0.55"/>
+
+  <!-- ═══════════════════════════════════════════════════════════
+       INERTIA MACROS
+  ═══════════════════════════════════════════════════════════════ -->
+
+  <!-- Solid box: l=length(x) w=width(y) h=height(z) -->
+  <xacro:macro name="inertia_box" params="m l w h">
+    <inertial>
+      <mass value="${m}"/>
+      <inertia
+        ixx="${m*(w*w + h*h)/12.0}" ixy="0" ixz="0"
+        iyy="${m*(l*l + h*h)/12.0}" iyz="0"
+        izz="${m*(l*l + w*w)/12.0}"/>
+    </inertial>
+  </xacro:macro>
+
+  <!-- Solid cylinder: r=radius h=height (axis Z) -->
+  <xacro:macro name="inertia_cylinder" params="m r h">
+    <inertial>
+      <mass value="${m}"/>
+      <inertia
+        ixx="${m*(3*r*r + h*h)/12.0}" ixy="0" ixz="0"
+        iyy="${m*(3*r*r + h*h)/12.0}" iyz="0"
+        izz="${m*r*r/2.0}"/>
+    </inertial>
+  </xacro:macro>
+
+  <!-- Thin disk: r=radius t=thickness (axis Z) -->
+  <xacro:macro name="inertia_disk" params="m r t">
+    <inertial>
+      <mass value="${m}"/>
+      <inertia
+        ixx="${m*(3*r*r + t*t)/12.0}" ixy="0" ixz="0"
+        iyy="${m*(3*r*r + t*t)/12.0}" iyz="0"
+        izz="${m*r*r/2.0}"/>
+    </inertial>
+  </xacro:macro>
+
+  <!-- ═══════════════════════════════════════════════════════════
+       MATERIALS
+  ═══════════════════════════════════════════════════════════════ -->
+  <material name="chassis_grey">
+    <color rgba="0.25 0.25 0.25 1.0"/>
+  </material>
+  <material name="track_black">
+    <color rgba="0.10 0.10 0.10 1.0"/>
+  </material>
+  <material name="arm_yellow">
+    <color rgba="0.85 0.65 0.05 1.0"/>
+  </material>
+  <material name="sensor_blue">
+    <color rgba="0.10 0.30 0.70 1.0"/>
+  </material>
+  <material name="cutter_red">
+    <color rgba="0.75 0.10 0.10 1.0"/>
+  </material>
+  <material name="bin_green">
+    <color rgba="0.20 0.45 0.20 1.0"/>
+  </material>
+  <material name="mast_silver">
+    <color rgba="0.70 0.70 0.72 1.0"/>
+  </material>
+  <material name="blade_steel">
+    <color rgba="0.82 0.82 0.86 1.0"/>
+  </material>
+
+  <!-- ═══════════════════════════════════════════════════════════
+       BASE FOOTPRINT (virtual ground frame)
+  ═══════════════════════════════════════════════════════════════ -->
+  <link name="base_footprint"/>
+
+  <joint name="base_footprint_joint" type="fixed">
+    <parent link="base_footprint"/>
+    <child  link="base_link"/>
+    <origin xyz="0 0 ${chassis_z}" rpy="0 0 0"/>
+  </joint>
+
+  <!-- ═══════════════════════════════════════════════════════════
+       CHASSIS
+  ═══════════════════════════════════════════════════════════════ -->
+  <link name="base_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="${chassis_length} ${chassis_width} ${chassis_height}"/>
+      </geometry>
+      <material name="chassis_grey"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="${chassis_length} ${chassis_width} ${chassis_height}"/>
+      </geometry>
+    </collision>
+    <xacro:inertia_box m="${chassis_mass}"
+                       l="${chassis_length}"
+                       w="${chassis_width}"
+                       h="${chassis_height}"/>
+  </link>
+
+  <!-- ═══════════════════════════════════════════════════════════
+       TRACKS  (approximated as rubber-belt boxes with continuous
+       joints; use track plugin in Gazebo for realistic physics)
+  ═══════════════════════════════════════════════════════════════ -->
+  <xacro:macro name="track" params="side y_sign">
+    <link name="${side}_track_link">
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <box size="${track_length} ${track_width} ${track_height}"/>
+        </geometry>
+        <material name="track_black"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <box size="${track_length} ${track_width} ${track_height}"/>
+        </geometry>
+      </collision>
+      <xacro:inertia_box m="${track_mass}"
+                         l="${track_length}"
+                         w="${track_width}"
+                         h="${track_height}"/>
+    </link>
+
+    <joint name="${side}_track_joint" type="continuous">
+      <parent link="base_link"/>
+      <child  link="${side}_track_link"/>
+      <origin xyz="0 ${y_sign * track_y_offset} ${track_z - chassis_z}" rpy="0 0 0"/>
+      <axis   xyz="0 1 0"/>
+      <dynamics damping="0.5" friction="0.8"/>
+    </joint>
+  </xacro:macro>
+
+  <xacro:track side="left"  y_sign=" 1"/>
+  <xacro:track side="right" y_sign="-1"/>
+
+  <!-- ═══════════════════════════════════════════════════════════
+       IMU (onboard, chassis centre)
+  ═══════════════════════════════════════════════════════════════ -->
+  <link name="imu_link">
+    <visual>
+      <geometry><box size="0.04 0.04 0.01"/></geometry>
+      <material name="sensor_blue"/>
+    </visual>
+    <collision>
+      <geometry><box size="0.04 0.04 0.01"/></geometry>
+    </collision>
+    <inertial>
+      <mass value="0.05"/>
+      <inertia ixx="1e-6" ixy="0" ixz="0" iyy="1e-6" iyz="0" izz="1e-6"/>
+    </inertial>
+  </link>
+
+  <joint name="imu_joint" type="fixed">
+    <parent link="base_link"/>
+    <child  link="imu_link"/>
+    <origin xyz="0 0 0.01" rpy="0 0 0"/>
+  </joint>
+
+  <!-- ═══════════════════════════════════════════════════════════
+       SENSOR MAST
+  ═══════════════════════════════════════════════════════════════ -->
+  <link name="sensor_mast_link">
+    <visual>
+      <origin xyz="0 0 ${mast_height/2}" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="${mast_radius}" length="${mast_height}"/>
+      </geometry>
+      <material name="mast_silver"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 ${mast_height/2}" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="${mast_radius}" length="${mast_height}"/>
+      </geometry>
+    </collision>
+    <xacro:inertia_cylinder m="1.2" r="${mast_radius}" h="${mast_height}"/>
+  </link>
+
+  <joint name="sensor_mast_joint" type="fixed">
+    <parent link="base_link"/>
+    <child  link="sensor_mast_link"/>
+    <origin xyz="${mast_x} 0 ${chassis_height/2}" rpy="0 0 0"/>
+  </joint>
+
+  <!-- LiDAR  ─────────────────────────────────────────────────── -->
+  <link name="lidar_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="${lidar_radius}" length="${lidar_height}"/>
+      </geometry>
+      <material name="sensor_blue"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="${lidar_radius}" length="${lidar_height}"/>
+      </geometry>
+    </collision>
+    <xacro:inertia_cylinder m="${lidar_mass}" r="${lidar_radius}" h="${lidar_height}"/>
+  </link>
+
+  <joint name="lidar_joint" type="fixed">
+    <parent link="sensor_mast_link"/>
+    <child  link="lidar_link"/>
+    <origin xyz="0 0 ${mast_height + lidar_z_offset}" rpy="0 0 0"/>
+  </joint>
+
+  <!-- Depth Camera (RealSense D455) ────────────────────────────
+       Frame convention: X right, Y down, Z forward (ROS optical)
+       Use a static TF from depth_camera_link → depth_camera_optical_link
+       if needed for image_transport.                              -->
+  <link name="depth_camera_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.124 0.029 0.029"/>
+      </geometry>
+      <material name="sensor_blue"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.124 0.029 0.029"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <mass value="${cam_mass}"/>
+      <inertia ixx="5e-5" ixy="0" ixz="0" iyy="5e-5" iyz="0" izz="5e-5"/>
+    </inertial>
+  </link>
+
+  <joint name="depth_camera_joint" type="fixed">
+    <parent link="sensor_mast_link"/>
+    <child  link="depth_camera_link"/>
+    <!-- mounted slightly forward on mast, angled 15° down for canopy view -->
+    <origin xyz="0.04 0 ${mast_height - 0.05}" rpy="0 0.2618 0"/>
+  </joint>
+
+  <!-- Optical frame for depth camera -->
+  <link name="depth_camera_optical_link"/>
+  <joint name="depth_camera_optical_joint" type="fixed">
+    <parent link="depth_camera_link"/>
+    <child  link="depth_camera_optical_link"/>
+    <origin xyz="0 0 0" rpy="${-PI/2} 0 ${-PI/2}"/>
+  </joint>
+
+  <!-- Pan-Tilt RGB camera (on mast top) ───────────────────────── -->
+  <link name="rgb_camera_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.05 0.04 0.04"/>
+      </geometry>
+      <material name="sensor_blue"/>
+    </visual>
+    <collision>
+      <geometry><box size="0.05 0.04 0.04"/></geometry>
+    </collision>
+    <inertial>
+      <mass value="0.08"/>
+      <inertia ixx="2e-5" ixy="0" ixz="0" iyy="2e-5" iyz="0" izz="2e-5"/>
+    </inertial>
+  </link>
+
+  <joint name="rgb_camera_joint" type="fixed">
+    <parent link="sensor_mast_link"/>
+    <child  link="rgb_camera_link"/>
+    <origin xyz="0 0 ${mast_height + lidar_z_offset*2 + lidar_height}" rpy="0 0 0"/>
+  </joint>
+
+  <!-- GPS antenna ──────────────────────────────────────────────── -->
+  <link name="gps_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="${gps_radius}" length="${gps_height}"/>
+      </geometry>
+      <material name="mast_silver"/>
+    </visual>
+    <collision>
+      <geometry>
+        <cylinder radius="${gps_radius}" length="${gps_height}"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <mass value="0.06"/>
+      <inertia ixx="1e-5" ixy="0" ixz="0" iyy="1e-5" iyz="0" izz="1e-5"/>
+    </inertial>
+  </link>
+
+  <joint name="gps_joint" type="fixed">
+    <parent link="sensor_mast_link"/>
+    <child  link="gps_link"/>
+    <origin xyz="0 0 ${mast_height + gps_z_offset}" rpy="0 0 0"/>
+  </joint>
+
+  <!-- ═══════════════════════════════════════════════════════════
+       COLLECTION BIN
+  ═══════════════════════════════════════════════════════════════ -->
+  <link name="bin_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="${bin_length} ${bin_width} ${bin_height}"/>
+      </geometry>
+      <material name="bin_green"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="${bin_length} ${bin_width} ${bin_height}"/>
+      </geometry>
+    </collision>
+    <xacro:inertia_box m="${bin_mass}"
+                       l="${bin_length}"
+                       w="${bin_width}"
+                       h="${bin_height}"/>
+  </link>
+
+  <joint name="bin_joint" type="fixed">
+    <parent link="base_link"/>
+    <child  link="bin_link"/>
+    <origin xyz="${bin_x} 0 ${chassis_height/2 + bin_height/2}" rpy="0 0 0"/>
+  </joint>
+
+  <!-- ═══════════════════════════════════════════════════════════
+       ARM — JOINT 1: AZIMUTH / PAN  (revolute, Z-axis)
+       Mounted on chassis front-top, full 360° rotation allowed
+       (limit to ±160° to protect cables in practice)
+  ═══════════════════════════════════════════════════════════════ -->
+  <link name="arm_base_link">
+    <visual>
+      <origin xyz="0 0 ${arm_base_height/2}" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="${arm_base_radius}" length="${arm_base_height}"/>
+      </geometry>
+      <material name="arm_yellow"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 ${arm_base_height/2}" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="${arm_base_radius}" length="${arm_base_height}"/>
+      </geometry>
+    </collision>
+    <xacro:inertia_cylinder m="${arm_base_mass}"
+                            r="${arm_base_radius}"
+                            h="${arm_base_height}"/>
+  </link>
+
+  <joint name="arm_pan_joint" type="revolute">
+    <parent link="base_link"/>
+    <child  link="arm_base_link"/>
+    <origin xyz="${arm_base_x} 0 ${chassis_height/2}" rpy="0 0 0"/>
+    <axis   xyz="0 0 1"/>
+    <limit  lower="-2.7925" upper="2.7925"
+            effort="120.0"  velocity="0.5"/>
+    <dynamics damping="2.0" friction="1.0"/>
+  </joint>
+
+  <!-- ═══════════════════════════════════════════════════════════
+       ARM — JOINT 2: BOOM ELEVATION / PITCH  (revolute, Y-axis)
+       Lifts the telescopic boom from horizontal → 75°
+  ═══════════════════════════════════════════════════════════════ -->
+  <link name="boom_pitch_link">
+    <visual>
+      <!-- Visualise as a cylinder along X (boom axis) -->
+      <origin xyz="${boom1_length/2} 0 0" rpy="0 ${PI/2} 0"/>
+      <geometry>
+        <cylinder radius="${boom1_radius}" length="${boom1_length}"/>
+      </geometry>
+      <material name="arm_yellow"/>
+    </visual>
+    <collision>
+      <origin xyz="${boom1_length/2} 0 0" rpy="0 ${PI/2} 0"/>
+      <geometry>
+        <cylinder radius="${boom1_radius}" length="${boom1_length}"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <mass value="${boom1_mass}"/>
+      <!-- Cylinder with axis along X: swap ixx ↔ izz of canonical form -->
+      <inertia
+        ixx="${boom1_mass*boom1_radius*boom1_radius/2.0}" ixy="0" ixz="0"
+        iyy="${boom1_mass*(3*boom1_radius*boom1_radius + boom1_length*boom1_length)/12.0}" iyz="0"
+        izz="${boom1_mass*(3*boom1_radius*boom1_radius + boom1_length*boom1_length)/12.0}"/>
+    </inertial>
+  </link>
+
+  <joint name="boom_pitch_joint" type="revolute">
+    <parent link="arm_base_link"/>
+    <child  link="boom_pitch_link"/>
+    <origin xyz="0 0 ${arm_base_height}" rpy="0 0 0"/>
+    <axis   xyz="0 1 0"/>
+    <limit  lower="${boom_pitch_min}" upper="${boom_pitch_max}"
+            effort="800.0"  velocity="0.3"/>
+    <dynamics damping="5.0" friction="2.0"/>
+  </joint>
+
+  <!-- ═══════════════════════════════════════════════════════════
+       ARM — JOINT 3: TELESCOPE EXTENSION  (prismatic, X-axis)
+       Stage-2 inner tube slides out from 0 → 2.0 m
+  ═══════════════════════════════════════════════════════════════ -->
+  <link name="boom_extend_link">
+    <visual>
+      <origin xyz="${boom2_length/2} 0 0" rpy="0 ${PI/2} 0"/>
+      <geometry>
+        <cylinder radius="${boom2_radius}" length="${boom2_length}"/>
+      </geometry>
+      <material name="arm_yellow"/>
+    </visual>
+    <collision>
+      <origin xyz="${boom2_length/2} 0 0" rpy="0 ${PI/2} 0"/>
+      <geometry>
+        <cylinder radius="${boom2_radius}" length="${boom2_length}"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <mass value="${boom2_mass}"/>
+      <inertia
+        ixx="${boom2_mass*boom2_radius*boom2_radius/2.0}" ixy="0" ixz="0"
+        iyy="${boom2_mass*(3*boom2_radius*boom2_radius + boom2_length*boom2_length)/12.0}" iyz="0"
+        izz="${boom2_mass*(3*boom2_radius*boom2_radius + boom2_length*boom2_length)/12.0}"/>
+    </inertial>
+  </link>
+
+  <joint name="boom_extend_joint" type="prismatic">
+    <parent link="boom_pitch_link"/>
+    <child  link="boom_extend_link"/>
+    <origin xyz="${boom1_length} 0 0" rpy="0 0 0"/>
+    <axis   xyz="1 0 0"/>
+    <limit  lower="${boom_ext_min}" upper="${boom_ext_max}"
+            effort="400.0"  velocity="0.2"/>
+    <dynamics damping="3.0" friction="1.5"/>
+  </joint>
+
+  <!-- ═══════════════════════════════════════════════════════════
+       ARM — JOINT 4: WRIST PITCH  (revolute, Y-axis)
+       Allows cutter to align with stalk angle (−90° … +90°)
+  ═══════════════════════════════════════════════════════════════ -->
+  <link name="wrist_pitch_link">
+    <visual>
+      <origin xyz="${wrist_length/2} 0 0" rpy="0 ${PI/2} 0"/>
+      <geometry>
+        <cylinder radius="${wrist_radius}" length="${wrist_length}"/>
+      </geometry>
+      <material name="arm_yellow"/>
+    </visual>
+    <collision>
+      <origin xyz="${wrist_length/2} 0 0" rpy="0 ${PI/2} 0"/>
+      <geometry>
+        <cylinder radius="${wrist_radius}" length="${wrist_length}"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <mass value="${wrist_mass}"/>
+      <inertia
+        ixx="${wrist_mass*wrist_radius*wrist_radius/2.0}" ixy="0" ixz="0"
+        iyy="${wrist_mass*(3*wrist_radius*wrist_radius + wrist_length*wrist_length)/12.0}" iyz="0"
+        izz="${wrist_mass*(3*wrist_radius*wrist_radius + wrist_length*wrist_length)/12.0}"/>
+    </inertial>
+  </link>
+
+  <joint name="wrist_pitch_joint" type="revolute">
+    <parent link="boom_extend_link"/>
+    <child  link="wrist_pitch_link"/>
+    <origin xyz="${boom2_length} 0 0" rpy="0 0 0"/>
+    <axis   xyz="0 1 0"/>
+    <limit  lower="${wrist_pitch_min}" upper="${wrist_pitch_max}"
+            effort="40.0"  velocity="1.0"/>
+    <dynamics damping="0.5" friction="0.3"/>
+  </joint>
+
+  <!-- ═══════════════════════════════════════════════════════════
+       ARM — JOINT 5: WRIST ROLL  (revolute, X-axis)
+       Rotates cutter to match stalk orientation
+  ═══════════════════════════════════════════════════════════════ -->
+  <link name="wrist_roll_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.038" length="0.06"/>
+      </geometry>
+      <material name="arm_yellow"/>
+    </visual>
+    <collision>
+      <geometry>
+        <cylinder radius="0.038" length="0.06"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <mass value="0.8"/>
+      <inertia ixx="5e-4" ixy="0" ixz="0" iyy="5e-4" iyz="0" izz="3e-4"/>
+    </inertial>
+  </link>
+
+  <joint name="wrist_roll_joint" type="revolute">
+    <parent link="wrist_pitch_link"/>
+    <child  link="wrist_roll_link"/>
+    <origin xyz="${wrist_length} 0 0" rpy="0 0 0"/>
+    <axis   xyz="1 0 0"/>
+    <limit  lower="${wrist_roll_min}" upper="${wrist_roll_max}"
+            effort="20.0"  velocity="1.5"/>
+    <dynamics damping="0.2" friction="0.1"/>
+  </joint>
+
+  <!-- ═══════════════════════════════════════════════════════════
+       END-EFFECTOR — CUTTER HOUSING  (fixed to wrist)
+  ═══════════════════════════════════════════════════════════════ -->
+  <link name="cutter_mount_link">
+    <visual>
+      <origin xyz="${cutter_length/2} 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="${cutter_length} ${cutter_width} ${cutter_height}"/>
+      </geometry>
+      <material name="cutter_red"/>
+    </visual>
+    <collision>
+      <origin xyz="${cutter_length/2} 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="${cutter_length} ${cutter_width} ${cutter_height}"/>
+      </geometry>
+    </collision>
+    <xacro:inertia_box m="${cutter_mass}"
+                       l="${cutter_length}"
+                       w="${cutter_width}"
+                       h="${cutter_height}"/>
+  </link>
+
+  <joint name="cutter_mount_joint" type="fixed">
+    <parent link="wrist_roll_link"/>
+    <child  link="cutter_mount_link"/>
+    <origin xyz="0.04 0 0" rpy="0 0 0"/>
+  </joint>
+
+  <!-- ═══════════════════════════════════════════════════════════
+       END-EFFECTOR — SICKLE BLADE  (continuous, Z-axis spin)
+       Blade modelled as a thin disk for inertia accuracy.
+       Motor: BLDC 500W, 0–3000 RPM.
+       Hardware E-stop disables this joint independently.
+  ═══════════════════════════════════════════════════════════════ -->
+  <link name="blade_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="${blade_radius}" length="${blade_thickness}"/>
+      </geometry>
+      <material name="blade_steel"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="${blade_radius}" length="${blade_thickness}"/>
+      </geometry>
+    </collision>
+    <xacro:inertia_disk m="${blade_mass}" r="${blade_radius}" t="${blade_thickness}"/>
+  </link>
+
+  <joint name="blade_spin_joint" type="continuous">
+    <parent link="cutter_mount_link"/>
+    <child  link="blade_link"/>
+    <origin xyz="${cutter_length - blade_radius*0.5} 0 0" rpy="0 ${PI/2} 0"/>
+    <axis   xyz="0 0 1"/>
+    <limit  effort="30.0" velocity="314.16"/>  <!-- 3000 RPM = 314 rad/s -->
+    <dynamics damping="0.01" friction="0.05"/>
+  </joint>
+
+  <!-- ═══════════════════════════════════════════════════════════
+       EEF FRAME  (tool centre point)
+       Used by MoveIt2 as the planning frame.
+  ═══════════════════════════════════════════════════════════════ -->
+  <link name="eef_link"/>
+
+  <joint name="eef_joint" type="fixed">
+    <parent link="cutter_mount_link"/>
+    <child  link="eef_link"/>
+    <!-- TCP at blade tip, offset from housing origin -->
+    <origin xyz="${cutter_length + 0.02} 0 0" rpy="0 0 0"/>
+  </joint>
+
+  <!-- ═══════════════════════════════════════════════════════════
+       GAZEBO PLUGINS
+  ═══════════════════════════════════════════════════════════════ -->
+
+  <!-- Differential drive (skid-steer approximation for tracks) -->
+  <gazebo>
+    <plugin name="gazebo_ros_diff_drive" filename="libgazebo_ros_diff_drive.so">
+      <ros>
+        <namespace>/palm_harvester</namespace>
+        <remapping>cmd_vel:=cmd_vel</remapping>
+        <remapping>odom:=odom</remapping>
+      </ros>
+      <left_joint>left_track_joint</left_joint>
+      <right_joint>right_track_joint</right_joint>
+      <wheel_separation>${track_y_offset * 2}</wheel_separation>
+      <wheel_diameter>${track_height}</wheel_diameter>
+      <max_wheel_torque>200.0</max_wheel_torque>
+      <max_wheel_acceleration>5.0</max_wheel_acceleration>
+      <publish_odom>true</publish_odom>
+      <publish_odom_tf>true</publish_odom_tf>
+      <publish_wheel_tf>true</publish_wheel_tf>
+      <odometry_frame>odom</odometry_frame>
+      <robot_base_frame>base_footprint</robot_base_frame>
+    </plugin>
+  </gazebo>
+
+  <!-- 3D LiDAR (Ouster OS1-32 approximation) -->
+  <gazebo reference="lidar_link">
+    <sensor name="ouster_lidar" type="ray">
+      <always_on>true</always_on>
+      <update_rate>10</update_rate>
+      <visualize>false</visualize>
+      <ray>
+        <scan>
+          <horizontal>
+            <samples>1024</samples>
+            <resolution>1</resolution>
+            <min_angle>${-PI}</min_angle>
+            <max_angle>${PI}</max_angle>
+          </horizontal>
+          <vertical>
+            <samples>32</samples>
+            <resolution>1</resolution>
+            <min_angle>-0.2618</min_angle>   <!-- -15° -->
+            <max_angle>0.2618</max_angle>    <!-- +15° -->
+          </vertical>
+        </scan>
+        <range>
+          <min>0.3</min>
+          <max>100.0</max>
+          <resolution>0.01</resolution>
+        </range>
+        <noise>
+          <type>gaussian</type>
+          <mean>0.0</mean>
+          <stddev>0.01</stddev>
+        </noise>
+      </ray>
+      <plugin name="gazebo_ros_lidar" filename="libgazebo_ros_ray_sensor.so">
+        <ros>
+          <namespace>/palm_harvester</namespace>
+          <remapping>~/out:=scan</remapping>
+        </ros>
+        <output_type>sensor_msgs/PointCloud2</output_type>
+        <frame_name>lidar_link</frame_name>
+      </plugin>
+    </sensor>
+  </gazebo>
+
+  <!-- Depth Camera -->
+  <gazebo reference="depth_camera_link">
+    <sensor name="realsense_d455" type="depth">
+      <always_on>true</always_on>
+      <update_rate>30</update_rate>
+      <camera>
+        <horizontal_fov>1.5010</horizontal_fov>  <!-- 86° -->
+        <image>
+          <width>848</width>
+          <height>480</height>
+          <format>R8G8B8</format>
+        </image>
+        <clip>
+          <near>0.2</near>
+          <far>10.0</far>
+        </clip>
+        <noise>
+          <type>gaussian</type>
+          <mean>0.0</mean>
+          <stddev>0.005</stddev>
+        </noise>
+      </camera>
+      <plugin name="gazebo_ros_depth_camera" filename="libgazebo_ros_camera.so">
+        <ros>
+          <namespace>/palm_harvester</namespace>
+        </ros>
+        <camera_name>depth_camera</camera_name>
+        <frame_name>depth_camera_optical_link</frame_name>
+        <hack_baseline>0.07</hack_baseline>
+        <min_depth>0.2</min_depth>
+        <max_depth>10.0</max_depth>
+      </plugin>
+    </sensor>
+  </gazebo>
+
+  <!-- IMU -->
+  <gazebo reference="imu_link">
+    <sensor name="imu_sensor" type="imu">
+      <always_on>true</always_on>
+      <update_rate>200</update_rate>
+      <plugin name="gazebo_ros_imu" filename="libgazebo_ros_imu_sensor.so">
+        <ros>
+          <namespace>/palm_harvester</namespace>
+          <remapping>~/out:=imu/data</remapping>
+        </ros>
+        <initial_orientation_as_reference>false</initial_orientation_as_reference>
+      </plugin>
+    </sensor>
+  </gazebo>
+
+  <!-- GPS -->
+  <gazebo reference="gps_link">
+    <sensor name="gps_sensor" type="gps">
+      <always_on>true</always_on>
+      <update_rate>10</update_rate>
+      <gps>
+        <position_sensing>
+          <horizontal><noise type="gaussian"><mean>0</mean><stddev>0.01</stddev></noise></horizontal>
+          <vertical><noise type="gaussian"><mean>0</mean><stddev>0.02</stddev></noise></vertical>
+        </position_sensing>
+      </gps>
+      <plugin name="gazebo_ros_gps" filename="libgazebo_ros_gps_sensor.so">
+        <ros>
+          <namespace>/palm_harvester</namespace>
+          <remapping>~/out:=gps/fix</remapping>
+        </ros>
+        <frame_name>gps_link</frame_name>
+      </plugin>
+    </sensor>
+  </gazebo>
+
+  <!-- ros2_control hardware interface ─────────────────────────── -->
+  <ros2_control name="palm_harvester_system" type="system">
+    <hardware>
+      <!-- Swap for real hardware: libpalm_harvester_hardware.so -->
+      <plugin>gz_ros2_control/GazeboSimSystem</plugin>
+    </hardware>
+
+    <!-- Track joints -->
+    <joint name="left_track_joint">
+      <command_interface name="velocity">
+        <param name="min">-4.0</param>
+        <param name="max"> 4.0</param>
+      </command_interface>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+    </joint>
+
+    <joint name="right_track_joint">
+      <command_interface name="velocity">
+        <param name="min">-4.0</param>
+        <param name="max"> 4.0</param>
+      </command_interface>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+    </joint>
+
+    <!-- Arm joints (position control) -->
+    <joint name="arm_pan_joint">
+      <command_interface name="position">
+        <param name="min">-2.7925</param>
+        <param name="max"> 2.7925</param>
+      </command_interface>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+      <state_interface name="effort"/>
+    </joint>
+
+    <joint name="boom_pitch_joint">
+      <command_interface name="position">
+        <param name="min">${boom_pitch_min}</param>
+        <param name="max">${boom_pitch_max}</param>
+      </command_interface>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+      <state_interface name="effort"/>
+    </joint>
+
+    <joint name="boom_extend_joint">
+      <command_interface name="position">
+        <param name="min">${boom_ext_min}</param>
+        <param name="max">${boom_ext_max}</param>
+      </command_interface>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+      <state_interface name="effort"/>
+    </joint>
+
+    <joint name="wrist_pitch_joint">
+      <command_interface name="position">
+        <param name="min">${wrist_pitch_min}</param>
+        <param name="max">${wrist_pitch_max}</param>
+      </command_interface>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+      <state_interface name="effort"/>
+    </joint>
+
+    <joint name="wrist_roll_joint">
+      <command_interface name="position">
+        <param name="min">${wrist_roll_min}</param>
+        <param name="max">${wrist_roll_max}</param>
+      </command_interface>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+      <state_interface name="effort"/>
+    </joint>
+
+    <!-- Blade: velocity control (on/off + speed via hardware) -->
+    <joint name="blade_spin_joint">
+      <command_interface name="velocity">
+        <param name="min">0.0</param>
+        <param name="max">314.16</param>
+      </command_interface>
+      <state_interface name="velocity"/>
+      <state_interface name="effort"/>
+    </joint>
+  </ros2_control>
+
+  <!-- gz_ros2_control plugin (Gazebo Sim / gz-sim) -->
+  <gazebo>
+    <plugin filename="gz_ros2_control-system"
+            name="gz_ros2_control::GazeboSimROS2ControlPlugin">
+      <parameters>$(find robot_description)/config/ros2_control.yaml</parameters>
+    </plugin>
+  </gazebo>
+
+</robot>
