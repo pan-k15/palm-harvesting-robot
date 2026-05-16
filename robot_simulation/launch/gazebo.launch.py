@@ -18,10 +18,6 @@ def generate_launch_description():
     pkg_simulation  = FindPackageShare('robot_simulation')
     pkg_ros_gz_sim  = FindPackageShare('ros_gz_sim')
 
-    controller_params = PathJoinSubstitution(
-        [pkg_description, 'config', 'ros2_control.yaml']
-    )
-
     urdf_path    = PathJoinSubstitution([pkg_description, 'urdf', 'robot.urdf.xacro'])
     default_world = PathJoinSubstitution([pkg_simulation, 'worlds', 'empty.sdf'])
 
@@ -88,11 +84,7 @@ def generate_launch_description():
         return Node(
             package='controller_manager',
             executable='spawner',
-            arguments=[
-                name,
-                '--controller-manager', '/controller_manager',
-                '--param-file', controller_params,
-            ],
+            arguments=[name, '--controller-manager', '/controller_manager'],
             output='screen',
         )
 
